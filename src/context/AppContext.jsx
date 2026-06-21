@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { signOutUser } from '../services/authService';
 
 const AppContext = createContext();
 
@@ -30,7 +31,13 @@ export const AppProvider = ({
   setUserProfile,
   user,
   celebrationActive,
-  setCelebrationActive
+  setCelebrationActive,
+  currentUser,
+  setCurrentUser,
+  isJudgesMode,
+  setIsJudgesMode,
+  onLoginSuccess,
+  onJudgesMode
 }) => {
   // Tip of the day index
   const [tipIndex, setTipIndex] = useState(0);
@@ -120,8 +127,11 @@ export const AppProvider = ({
       ],
       funQuizCompleted: false
     });
-    setScreen('welcome');
+    setScreen('login');
     setActiveTab('home');
+    if (setCurrentUser) setCurrentUser(null);
+    if (setIsJudgesMode) setIsJudgesMode(false);
+    signOutUser().catch(err => console.error("Sign-out error during reset:", err));
   };
 
   return (
@@ -140,7 +150,11 @@ export const AppProvider = ({
       triggerCelebration,
       resetApp,
       todayTip: ECO_TIPS[tipIndex],
-      addPoints
+      addPoints,
+      currentUser,
+      isJudgesMode,
+      onLoginSuccess,
+      onJudgesMode
     }}>
       {children}
     </AppContext.Provider>

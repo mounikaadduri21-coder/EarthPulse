@@ -4,14 +4,29 @@ import Splash from './components/Splash';
 import Onboarding from './components/Onboarding';
 import Dashboard from './components/Dashboard';
 import MenuOverlay from './components/MenuOverlay';
+import Login from './components/Login';
+import { onAuthStateChangedListener } from './services/authService';
+import { loadUserData, saveUserData } from './services/dbService';
 import './App.css'; // Can remain empty or be deleted later
 
 function AppContent() {
-  const { screen, celebrationActive } = useApp();
+  const { screen, celebrationActive, onLoginSuccess, onJudgesMode, authLoading } = useApp();
+
+  if (authLoading) {
+    return (
+      <div className="app-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: 'var(--bg-phone)' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '40px', height: '40px', border: '3px solid var(--border)', borderTop: '3px solid var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }}></div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '14px', fontWeight: '500' }}>Loading EarthPulse...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
       {/* Screen Router */}
+      {screen === 'login' && <Login onLoginSuccess={onLoginSuccess} onJudgesMode={onJudgesMode} />}
       {screen === 'splash' && <Splash />}
       {(screen === 'welcome' || screen === 'companion' || screen === 'onboarding') && <Onboarding />}
       {screen === 'dashboard' && <Dashboard />}
@@ -56,7 +71,7 @@ export default function App() {
   });
 
   // Current screen management
-  const [screen, setScreen] = useState('splash');
+  const [screen, setScreen] = useState('login');
   
   // Active page inside the dashboard
   const [activeTab, setActiveTab] = useState('home');
@@ -127,6 +142,11 @@ export default function App() {
     };
   });
 
+  // Auth states
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isJudgesMode, setIsJudgesMode] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+
   // Celebration state
   const [celebrationActive, setCelebrationActive] = useState(false);
 
@@ -141,6 +161,156 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('earthpulse_user', JSON.stringify(user));
   }, [userProfile, points, streak]);
+
+  // Auth session observer on load
+  useEffect(() => {
+    const unsubscribe = onAuthStateChangedListener(async (firebaseUser) => {
+      if (firebaseUser) {
+        setCurrentUser(firebaseUser);
+        try {
+          const dbData = await loadUserData(firebaseUser.uid);
+          if (dbData) {
+            if (typeof dbData.points === 'number') setPoints(dbData.points);
+            if (typeof dbData.streak === 'number') setStreak(dbData.streak);
+            setUserProfile({
+              companion: dbData.companion || null,
+              badges: Array.isArray(dbData.badges) ? dbData.badges : [],
+              co2Saved: typeof dbData.co2Saved === 'number' ? dbData.co2Saved : 14.0,
+              co2Goal: typeof dbData.co2Goal === 'number' ? dbData.co2Goal : 20.0,
+              history: Array.isArray(dbData.history) ? dbData.history : [],
+              funQuizCompleted: !!dbData.funQuizCompleted
+            });
+            if (dbData.companion) {
+              setScreen('dashboard');
+            } else {
+              setScreen('welcome');
+            }
+          } else {
+            // Google user but no Firestore data yet
+            if (userProfile.companion) {
+              // Sync current local storage to database
+              await saveUserData(firebaseUser.uid, {
+                companion: userProfile.companion,
+                points,
+                streak,
+                badges: userProfile.badges,
+                co2Saved: userProfile.co2Saved,
+                co2Goal: userProfile.co2Goal,
+                funQuizCompleted: userProfile.funQuizCompleted,
+                history: userProfile.history
+              });
+              setScreen('dashboard');
+            } else {
+              setScreen('welcome');
+            }
+          }
+        } catch (error) {
+          console.error("Firestore Load Error on mount:", error);
+          if (userProfile.companion) {
+            setScreen('dashboard');
+          } else {
+            setScreen('welcome');
+          }
+        }
+      } else {
+        setCurrentUser(null);
+        setScreen('login');
+      }
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore autosave hook when data changes
+  useEffect(() => {
+    if (currentUser && !authLoading) {
+      const saveData = async () => {
+        try {
+          await saveUserData(currentUser.uid, {
+            companion: userProfile.companion,
+            points: points,
+            streak: streak,
+            badges: userProfile.badges,
+            co2Saved: userProfile.co2Saved,
+            co2Goal: userProfile.co2Goal,
+            funQuizCompleted: userProfile.funQuizCompleted,
+            history: userProfile.history
+          });
+        } catch (error) {
+          console.error("Firestore autosave error:", error);
+        }
+      };
+
+      const timer = setTimeout(() => {
+        saveData();
+      }, 1000); // 1-second debounce to batch multiple updates
+      return () => clearTimeout(timer);
+    }
+  }, [userProfile, points, streak, currentUser, authLoading]);
+
+  // Login handler
+  const handleLoginSuccess = async (loggedInUser) => {
+    setAuthLoading(true);
+    setCurrentUser(loggedInUser);
+    setIsJudgesMode(false);
+    try {
+      const dbData = await loadUserData(loggedInUser.uid);
+      if (dbData) {
+        if (typeof dbData.points === 'number') setPoints(dbData.points);
+        if (typeof dbData.streak === 'number') setStreak(dbData.streak);
+        setUserProfile({
+          companion: dbData.companion || null,
+          badges: Array.isArray(dbData.badges) ? dbData.badges : [],
+          co2Saved: typeof dbData.co2Saved === 'number' ? dbData.co2Saved : 14.0,
+          co2Goal: typeof dbData.co2Goal === 'number' ? dbData.co2Goal : 20.0,
+          history: Array.isArray(dbData.history) ? dbData.history : [],
+          funQuizCompleted: !!dbData.funQuizCompleted
+        });
+        if (dbData.companion) {
+          setScreen('dashboard');
+        } else {
+          setScreen('welcome');
+        }
+      } else {
+        // Sync existing local details if present
+        await saveUserData(loggedInUser.uid, {
+          companion: userProfile.companion,
+          points: points,
+          streak: streak,
+          badges: userProfile.badges,
+          co2Saved: userProfile.co2Saved,
+          co2Goal: userProfile.co2Goal,
+          funQuizCompleted: userProfile.funQuizCompleted,
+          history: userProfile.history
+        });
+        if (userProfile.companion) {
+          setScreen('dashboard');
+        } else {
+          setScreen('welcome');
+        }
+      }
+    } catch (error) {
+      console.error("Login success callback load data error:", error);
+      if (userProfile.companion) {
+        setScreen('dashboard');
+      } else {
+        setScreen('welcome');
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleJudgesMode = () => {
+    setIsJudgesMode(true);
+    setCurrentUser(null);
+    if (userProfile.companion) {
+      setScreen('dashboard');
+    } else {
+      setScreen('welcome');
+    }
+  };
 
   // Apply theme to DOM
   useEffect(() => {
@@ -210,9 +380,16 @@ export default function App() {
       user={user}
       celebrationActive={celebrationActive}
       setCelebrationActive={setCelebrationActive}
+      currentUser={currentUser}
+      setCurrentUser={setCurrentUser}
+      isJudgesMode={isJudgesMode}
+      setIsJudgesMode={setIsJudgesMode}
+      onLoginSuccess={handleLoginSuccess}
+      onJudgesMode={handleJudgesMode}
     >
       <AppContent />
     </AppProvider>
   );
 }
+
 
