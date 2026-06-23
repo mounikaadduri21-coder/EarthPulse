@@ -6,6 +6,9 @@ import { auth, googleProvider } from '../firebase';
  * @returns {Promise<UserCredential>}
  */
 export const signInWithGoogle = async () => {
+  if (!auth || !googleProvider) {
+    throw new Error("Google Sign-In is unavailable because Firebase is not configured.");
+  }
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
@@ -20,6 +23,10 @@ export const signInWithGoogle = async () => {
  * @returns {Promise<void>}
  */
 export const signOutUser = async () => {
+  if (!auth) {
+    console.warn("Sign-out requested but Firebase Auth is not initialized.");
+    return;
+  }
   try {
     await signOut(auth);
   } catch (error) {
@@ -34,5 +41,10 @@ export const signOutUser = async () => {
  * @returns {Function} unsubscribe function
  */
 export const onAuthStateChangedListener = (callback) => {
+  if (!auth) {
+    console.warn("Firebase Auth is not initialized. Using mockup auth listener.");
+    // Return a dummy unsubscribe function
+    return () => {};
+  }
   return onAuthStateChanged(auth, callback);
 };

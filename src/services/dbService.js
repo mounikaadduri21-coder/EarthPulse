@@ -9,6 +9,10 @@ import { db } from '../firebase';
  */
 export const saveUserData = async (userId, data) => {
   if (!userId) return;
+  if (!db) {
+    console.warn("Firestore is not initialized. Skipping saveUserData.");
+    return;
+  }
   try {
     const userDocRef = doc(db, 'users', userId);
     await setDoc(userDocRef, {
@@ -35,6 +39,10 @@ export const saveUserData = async (userId, data) => {
  */
 export const loadUserData = async (userId) => {
   if (!userId) return null;
+  if (!db) {
+    console.warn("Firestore is not initialized. Skipping loadUserData.");
+    return null;
+  }
   try {
     const userDocRef = doc(db, 'users', userId);
     const docSnap = await getDoc(userDocRef);

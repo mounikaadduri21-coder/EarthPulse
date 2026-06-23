@@ -7,10 +7,20 @@ import MenuOverlay from './components/MenuOverlay';
 import Login from './components/Login';
 import { onAuthStateChangedListener } from './services/authService';
 import { loadUserData, saveUserData } from './services/dbService';
+import { isFirebaseConfigured, firebaseInitError } from './firebase';
+import FirebaseSetupScreen from './components/FirebaseSetupScreen';
 import './App.css'; // Can remain empty or be deleted later
 
 function AppContent() {
-  const { screen, celebrationActive, onLoginSuccess, onJudgesMode, authLoading } = useApp();
+  const { screen, celebrationActive, onLoginSuccess, onJudgesMode, authLoading, isJudgesMode } = useApp();
+
+  if (!isFirebaseConfigured && !isJudgesMode) {
+    return (
+      <div className="app-container">
+        <FirebaseSetupScreen onJudgesMode={onJudgesMode} initError={firebaseInitError} />
+      </div>
+    );
+  }
 
   if (authLoading) {
     return (
@@ -164,6 +174,10 @@ export default function App() {
 
   // Auth session observer on load
   useEffect(() => {
+    if (!isFirebaseConfigured) {
+      setAuthLoading(false);
+      return;
+    }
     const unsubscribe = onAuthStateChangedListener(async (firebaseUser) => {
       if (firebaseUser) {
         setCurrentUser(firebaseUser);
